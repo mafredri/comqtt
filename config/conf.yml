@@ -44,6 +44,7 @@ mqtt:
     client-read-buffer-size: 2048  #It is the size of the queue per worker.
     sys-topic-resend-interval: 1 #It specifies the interval between $SYS topic updates in seconds.
     inline-client: false #Whether to enable the inline client.
+    connect-timeout: 0s #How long a new connection may take to send CONNECT, such as 10s; 0s means no limit.
     capabilities:
       compatibilities:
         obscure-not-authorized: false #Return unspecified errors instead of not authorized
