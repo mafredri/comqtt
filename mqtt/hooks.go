@@ -409,6 +409,13 @@ func (h *Hooks) OnPublish(cl *Client, pk packets.Packet) (pkx packets.Packet, er
 						"packet", pkx)
 					return pk, err
 				}
+				if errors.Is(err, packets.CodeSuccessIgnore) {
+					// A hook's deliberate decision, not a failure.
+					h.Log.Debug("publish packet ignored",
+						"hook", hook.ID(),
+						"packet", pkx)
+					return pk, err
+				}
 				h.Log.Error("publish packet error",
 					"error", err,
 					"hook", hook.ID(),
