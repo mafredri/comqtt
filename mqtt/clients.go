@@ -110,7 +110,9 @@ func (cl *Clients) CompareAndDelete(id string, val *Client) bool {
 func (cl *Clients) GetByListener(id string) []*Client {
 	cl.RLock()
 	defer cl.RUnlock()
-	clients := make([]*Client, 0, cl.Len())
+	// Not cl.Len: taking the read lock again while holding it deadlocks once
+	// a writer (a disconnecting client) queues in between.
+	clients := make([]*Client, 0, len(cl.internal))
 	for _, client := range cl.internal {
 		if client.Net.Listener == id && !client.Closed() {
 			clients = append(clients, client)
