@@ -168,6 +168,51 @@ type Server struct {
 	Blacklist    []string             // blacklist of client id
 	blacklistMu  sync.RWMutex
 	establishMu  keyedMutex // serializes session establishment per client id
+	conns        connections
+}
+
+// connections are the network connections EstablishConnection is serving,
+// from accept until the client has disconnected, so Close can end and wait
+// for all of them, including those that have not sent CONNECT.
+type connections struct {
+	sync.Mutex
+	open    map[net.Conn]struct{}
+	closing bool
+	wg      sync.WaitGroup
+}
+
+// add records c, or reports false once the server is closing.
+func (cs *connections) add(c net.Conn) bool {
+	cs.Lock()
+	defer cs.Unlock()
+	if cs.closing {
+		return false
+	}
+	if cs.open == nil {
+		cs.open = map[net.Conn]struct{}{}
+	}
+	cs.open[c] = struct{}{}
+	cs.wg.Add(1)
+	return true
+}
+
+func (cs *connections) done(c net.Conn) {
+	cs.Lock()
+	delete(cs.open, c)
+	cs.Unlock()
+	cs.wg.Done()
+}
+
+// closeAll refuses further connections, closes the open ones and waits until
+// EstablishConnection has returned for each.
+func (cs *connections) closeAll() {
+	cs.Lock()
+	cs.closing = true
+	for c := range cs.open {
+		_ = c.Close()
+	}
+	cs.Unlock()
+	cs.wg.Wait()
 }
 
 // keyedMutex is a fixed set of striped locks keyed by string. It serializes
@@ -407,6 +452,11 @@ func (s *Server) stopTickers() {
 
 // EstablishConnection establishes a new client when a listener accepts a new connection.
 func (s *Server) EstablishConnection(listener string, c net.Conn) error {
+	if !s.conns.add(c) {
+		_ = c.Close()
+		return packets.ErrServerShuttingDown
+	}
+	defer s.conns.done(c)
 	cl := s.NewClient(c, listener, "", false)
 	return s.attachClient(cl, listener)
 }
@@ -1711,6 +1761,10 @@ func (s *Server) publishSysTopics() {
 func (s *Server) Close() error {
 	close(s.done)
 	s.Listeners.CloseAll(s.closeListenerClients)
+	// Connections accepted before the listeners closed may not have sent
+	// CONNECT yet, or may be between CONNECT and joining s.Clients; close
+	// them too, and let every connection finish its hooks before the hooks stop.
+	s.conns.closeAll()
 	s.hooks.OnStopped()
 	s.hooks.Stop()
 
