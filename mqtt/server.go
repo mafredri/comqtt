@@ -150,6 +150,14 @@ type Options struct {
 
 	// PrometheusRegistry to store metrics
 	PrometheusRegistry *prometheus.Registry
+
+	// ConnectTimeout limits how long a new connection may take to send its
+	// CONNECT packet, counted from when the server starts serving it; a
+	// connection that has not sent one by then is closed. For a listener that
+	// performs the TLS handshake on the first read (TCP with a TLS config),
+	// the handshake counts towards it; listeners.NewNet with connections
+	// that have completed their handshake excludes it. 0 means no limit.
+	ConnectTimeout time.Duration `yaml:"connect-timeout"`
 }
 
 // Server is an MQTT broker server. It should be created with server.New()
@@ -415,6 +423,10 @@ func (s *Server) EstablishConnection(listener string, c net.Conn) error {
 // to the server, performs session housekeeping, and reads incoming packets.
 func (s *Server) attachClient(cl *Client, listener string) error {
 	defer cl.Stop(nil)
+	if timeout := s.Options.ConnectTimeout; timeout > 0 && cl.Net.Conn != nil {
+		// Replaced by the keepalive deadline once CONNECT has been read.
+		_ = cl.Net.Conn.SetReadDeadline(time.Now().Add(timeout))
+	}
 	pk, err := s.readConnectionPacket(cl)
 	if err != nil {
 		return fmt.Errorf("read connection: %w", err)

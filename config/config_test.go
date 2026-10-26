@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -85,6 +86,12 @@ func TestParse(t *testing.T) {
 	require.Equal(t, 7946, cfg.Cluster.BindPort)
 	require.Equal(t, "127.0.0.1:6379", cfg.Redis.Options.Addr)
 	require.Equal(t, 10240, cfg.Cluster.QueueDepth)
+}
+
+func TestParseConnectTimeout(t *testing.T) {
+	cfg, err := parse([]byte("mqtt:\n  options:\n    connect-timeout: 10s\n"))
+	require.NoError(t, err)
+	require.Equal(t, 10*time.Second, cfg.Mqtt.Options.ConnectTimeout)
 }
 
 func TestDashboardConfigDefaults(t *testing.T) {
