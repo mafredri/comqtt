@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"log"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -175,4 +176,32 @@ func TestCloseAllListeners(t *testing.T) {
 	require.True(t, closed["t1"])
 	require.True(t, closed["t2"])
 	require.True(t, closed["t3"])
+}
+
+// servedListener records whether its Serve has run and returned.
+type servedListener struct {
+	*MockListener
+	stop     chan struct{}
+	returned atomic.Bool
+}
+
+func (l *servedListener) Serve(EstablishFn) {
+	<-l.stop
+	l.returned.Store(true)
+}
+
+func (l *servedListener) Close(CloseFn) { close(l.stop) }
+
+// TestCloseAllWaitsForServe closes listeners right after starting them:
+// CloseAll must not return before every Serve has returned, which needs the
+// WaitGroup Add to happen before Serve's goroutine starts.
+func TestCloseAllWaitsForServe(t *testing.T) {
+	for range 1000 {
+		l := New()
+		sl := &servedListener{MockListener: NewMockListener("t1", testAddr), stop: make(chan struct{})}
+		l.Add(sl)
+		l.Serve("t1", MockEstablisher)
+		l.CloseAll(MockCloser)
+		require.True(t, sl.returned.Load(), "CloseAll returned before Serve did")
+	}
 }

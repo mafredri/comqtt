@@ -86,9 +86,11 @@ func (l *Listeners) Serve(id string, establisher EstablishFn) {
 	defer l.RUnlock()
 	listener := l.internal[id]
 
+	// Add before starting the goroutine: an Add inside it can run after
+	// CloseAll's Wait has returned, leaving the listener unwaited.
+	l.wg.Add(1)
 	go func(e EstablishFn) {
 		defer l.wg.Done()
-		l.wg.Add(1)
 		listener.Serve(e)
 	}(establisher)
 }
