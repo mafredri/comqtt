@@ -5,7 +5,9 @@
 package mqtt
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -356,6 +358,25 @@ func TestHooksOnPublish(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrRejectPacket)
 	require.Equal(t, uint16(10), pk.PacketID)
+}
+
+func TestHooksOnPublishIgnoreIsNotAnError(t *testing.T) {
+	var logs bytes.Buffer
+	h := new(Hooks)
+	h.Log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.CodeSuccessIgnore
+	require.NoError(t, h.Add(hook, nil))
+
+	_, err := h.OnPublish(new(Client), packets.Packet{PacketID: 10})
+	require.ErrorIs(t, err, packets.CodeSuccessIgnore)
+	require.Empty(t, logs.String())
+
+	hook.err = errTestHook
+	_, err = h.OnPublish(new(Client), packets.Packet{PacketID: 10})
+	require.ErrorIs(t, err, errTestHook)
+	require.Contains(t, logs.String(), "level=ERROR")
 }
 
 func TestHooksOnPacketRead(t *testing.T) {
